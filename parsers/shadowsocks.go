@@ -1,0 +1,73 @@
+package parsers
+
+import (
+	"encoding/base64"
+	"errors"
+	"singboxtest/utils"
+	"strings"
+
+	"github.com/sagernet/sing-box/option"
+)
+
+type ShadowsocksParser struct{}
+
+func (p ShadowsocksParser) ParseProfile(connURI string) (*ProxyProfile, error) {
+	connURI, err := utils.TryFixURI(connURI)
+	if err != nil {
+		return nil, err
+	}
+
+	uri, addr, port, err := extractCommonURIData(connURI, "shadowsocks")
+	if err != nil {
+		return nil, err
+	}
+
+	params := uri.Query()
+
+	var method, password string
+
+	authPart := uri.User.Username()
+	uriPassword, _ := uri.User.Password()
+
+	if !strings.Contains(authPart, ":") && uriPassword == "" {
+		userPart := uri.User.String()
+		decodedAuthBytes, err := base64.StdEncoding.DecodeString(userPart)
+		if err == nil {
+			decodedAuth := string(decodedAuthBytes)
+			if strings.Count(decodedAuth, ":") > 0 {
+				method, password, _ = strings.Cut(decodedAuth, ":")
+			} else {
+				return nil, errors.New("malformed base64 encoded user:pass tuple")
+			}
+		}
+	}
+
+	if method == "" && password == "" {
+		if strings.Contains(authPart, ":") {
+			method, password, _ = strings.Cut(authPart, ":")
+		} else {
+			method = params.Get("method")
+			if method == "" {
+				method = "none"
+			}
+			password = authPart
+		}
+	}
+
+	o := &option.Outbound{
+		Type: "shadowsocks",
+		Options: &option.ShadowsocksOutboundOptions{
+			ServerOptions: option.ServerOptions{
+				Server:     addr,
+				ServerPort: port,
+			},
+			Method:   method,
+			Password: password,
+		},
+	}
+
+	return &ProxyProfile{
+		Outbound: o,
+		ConnURI:  connURI,
+	}, nil
+}
