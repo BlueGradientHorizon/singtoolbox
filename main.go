@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"singtoolbox/parsers"
-	"singtoolbox/printers"
-	"singtoolbox/testers"
-	"singtoolbox/tools"
-	"singtoolbox/utils"
+	"github.com/bluegradienthorizon/singtoolbox/parsers"
+	"github.com/bluegradienthorizon/singtoolbox/printers"
+	"github.com/bluegradienthorizon/singtoolbox/testers"
+	"github.com/bluegradienthorizon/singtoolbox/tools"
+	"github.com/bluegradienthorizon/singtoolbox/utils"
 
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"

@@ -2,7 +2,7 @@ package printers
 
 import (
 	"fmt"
-	"singtoolbox/testers"
+	"github.com/bluegradienthorizon/singtoolbox/testers"
 )
 
 type StatsPrinter struct {
