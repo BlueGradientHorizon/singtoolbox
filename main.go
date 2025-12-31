@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"singboxtest/parsers"
-	"singboxtest/printers"
-	"singboxtest/testers"
-	"singboxtest/tools"
-	"singboxtest/utils"
+	"singtoolbox/parsers"
+	"singtoolbox/printers"
+	"singtoolbox/testers"
+	"singtoolbox/tools"
+	"singtoolbox/utils"
 
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"

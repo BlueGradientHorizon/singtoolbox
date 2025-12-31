@@ -3,7 +3,7 @@ package parsers
 import (
 	"encoding/base64"
 	"errors"
-	"singboxtest/utils"
+	"singtoolbox/utils"
 	"strings"
 
 	"github.com/sagernet/sing-box/option"

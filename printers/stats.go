@@ -2,7 +2,7 @@ package printers
 
 import (
 	"fmt"
-	"singboxtest/testers"
+	"singtoolbox/testers"
 )
 
 type StatsPrinter struct {

@@ -1,7 +1,7 @@
 package parsers
 
 import (
-	"singboxtest/utils"
+	"singtoolbox/utils"
 
 	"github.com/sagernet/sing-box/option"
 )

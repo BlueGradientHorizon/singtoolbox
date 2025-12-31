@@ -1,4 +1,4 @@
-module singboxtest
+module singtoolbox
 
 go 1.23.1
 
