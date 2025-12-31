@@ -1,4 +1,4 @@
-module singtoolbox
+module github.com/bluegradienthorizon/singtoolbox
 
 go 1.23.1
 
