@@ -3,6 +3,7 @@ package parsers
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -33,12 +34,12 @@ func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	decodedBytes, err := enc.DecodeString(base64Part)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
 	}
 
 	var tempMap map[string]any
 	if err := json.Unmarshal(decodedBytes, &tempMap); err != nil {
-		return nil, err
+		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
 	}
 
 	query := map[string]string{}
@@ -58,7 +59,7 @@ func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 	addr := params.Get("add")
 	portUnchecked, err := strconv.ParseUint(params.Get("port"), 10, 16)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
 	}
 	port := uint16(portUnchecked)
 	// remark := params.Get("ps")
@@ -67,12 +68,12 @@ func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	TLSOptions, err := buildOutboundTLSOptions(params, "vmess")
 	if err != nil {
-		return nil, err
+		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
 	}
 
 	transportOptions, err := buildV2RayTransportOptions(params, "vmess")
 	if err != nil {
-		return nil, err
+		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
 	}
 
 	o := &option.Outbound{

@@ -85,7 +85,7 @@ func main() {
 			},
 		})
 		if err != nil {
-			validationErrorsMap[err.Error()]++
+			validationErrorsMap[p.Outbound.Type+": "+err.Error()]++
 			continue
 		}
 		instance.Close()

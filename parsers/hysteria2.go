@@ -1,6 +1,8 @@
 package parsers
 
 import (
+	"errors"
+
 	"github.com/bluegradienthorizon/singtoolbox/utils"
 
 	"github.com/sagernet/sing-box/option"
@@ -11,12 +13,12 @@ type Hysteria2Parser struct{}
 func (p Hysteria2Parser) ParseProfile(connURI string) (*ProxyProfile, error) {
 	connURI, err := utils.TryFixURI(connURI)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Hysteria2Parser.ParseProfile: "+err.Error())
 	}
 
 	uri, addr, port, err := extractCommonURIData(connURI, "vless")
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Hysteria2Parser.ParseProfile: "+err.Error())
 	}
 
 	params := uri.Query()

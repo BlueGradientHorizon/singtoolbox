@@ -37,7 +37,7 @@ func buildOutboundTLSOptions(query url.Values, protocol string) (*option.Outboun
 
 	if security != "" {
 		if (security != "tls") && (security != "reality") && (security != "none") {
-			return nil, fmt.Errorf("unsupported security parameter %s", security)
+			return nil, fmt.Errorf("buildOutboundTLSOptions: unsupported security parameter %s", security)
 		}
 
 		if security != "none" {
@@ -151,15 +151,15 @@ func buildV2RayTransportOptions(query url.Values, protocol string) (*option.V2Ra
 			// Headers: , // TODO ??
 		}
 	case "kcp":
-		return nil, errors.New("transport kcp unsupported")
+		return nil, errors.New("buildV2RayTransportOptions: transport kcp unsupported")
 	case "mkcp":
-		return nil, errors.New("transport mkcp unsupported")
+		return nil, errors.New("buildV2RayTransportOptions: transport mkcp unsupported")
 	case "xhttp":
-		return nil, errors.New("transport xhttp unsupported")
+		return nil, errors.New("buildV2RayTransportOptions: transport xhttp unsupported")
 	case "splithttp":
-		return nil, errors.New("transport splithttp unsupported")
+		return nil, errors.New("buildV2RayTransportOptions: transport splithttp unsupported")
 	default:
-		return nil, fmt.Errorf("unknown transport %s", type_)
+		return nil, fmt.Errorf("buildV2RayTransportOptions: unknown transport %s", type_)
 	}
 
 	return options, nil
@@ -184,7 +184,7 @@ func fixTrojanURI(uri string) (*url.URL, error) {
 
 	lastAt := strings.LastIndex(beforeRemark, "@")
 	if lastAt == -1 {
-		return nil, errors.New("malformed URI: symbol '@' not found")
+		return nil, errors.New("fixTrojanURI: malformed URI: symbol '@' not found")
 	}
 
 	beforeAt := beforeRemark[:lastAt]
@@ -192,7 +192,7 @@ func fixTrojanURI(uri string) (*url.URL, error) {
 
 	schemeSplit := strings.SplitN(beforeAt, "://", 2)
 	if len(schemeSplit) < 2 {
-		return nil, errors.New("malformed URI: split by '://' failed")
+		return nil, errors.New("fixTrojanURI: malformed URI: split by '://' failed")
 	}
 	scheme := schemeSplit[0]
 	userInfo := schemeSplit[1]
@@ -203,7 +203,7 @@ func fixTrojanURI(uri string) (*url.URL, error) {
 	tempURI := scheme + "://placeholder@" + afterAt
 	u, err := url.Parse(tempURI)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("fixTrojanURI: " + err.Error())
 	}
 
 	u.User = url.User(userInfo)
@@ -214,12 +214,16 @@ func fixTrojanURI(uri string) (*url.URL, error) {
 
 func parseConfigURI(uri string, scheme string) (*url.URL, error) {
 	if scheme == "trojan" {
-		return fixTrojanURI(uri)
+		u, err := fixTrojanURI(uri)
+		if err != nil {
+			return nil, errors.New("parseConfigURI: " + err.Error())
+		}
+		return u, nil
 	}
 
 	u, err := url.Parse(uri)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("parseConfigURI: " + err.Error())
 	}
 
 	if u.Scheme == "" {
@@ -275,12 +279,12 @@ func parseNetlocForEndpoint(u *url.URL) (string, uint16, bool) {
 func extractCommonURIData(uri string, scheme string) (*url.URL, string, uint16, error) {
 	parsedURI, err := parseConfigURI(uri, scheme)
 	if err != nil {
-		return nil, "", 0, err
+		return nil, "", 0, errors.New("extractCommonURIData: " + err.Error())
 	}
 
 	address, port, ok := parseNetlocForEndpoint(parsedURI)
 	if !ok {
-		return nil, "", 0, errors.New("cannot parse netloc for endpoint")
+		return nil, "", 0, errors.New("extractCommonURIData: cannot parse netloc for endpoint")
 	}
 
 	return parsedURI, address, port, nil

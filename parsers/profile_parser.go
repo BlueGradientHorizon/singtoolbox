@@ -20,7 +20,7 @@ type ProfileParser interface {
 func ParseProfile(connURI string) (*ProxyProfile, error) {
 	connURI = strings.TrimSpace(connURI)
 	if connURI == "" {
-		return nil, errors.New("empty configuration URI")
+		return nil, errors.New("ParseProfile: empty configuration URI")
 	}
 
 	splitURI := strings.Split(connURI, "://")
@@ -37,10 +37,10 @@ func ParseProfile(connURI string) (*ProxyProfile, error) {
 	if parser, ok := parsers[splitURI[0]]; ok {
 		profile, err := parser.ParseProfile(connURI)
 		if err != nil {
-			return nil, err
+			return nil, errors.New("ParseProfile: " + err.Error())
 		}
 		return profile, nil
 	} else {
-		return nil, fmt.Errorf("unknown profile URI scheme %s", splitURI[0])
+		return nil, fmt.Errorf("ParseProfile: unknown profile URI scheme %s", splitURI[0])
 	}
 }

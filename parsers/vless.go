@@ -1,6 +1,8 @@
 package parsers
 
 import (
+	"errors"
+
 	"github.com/bluegradienthorizon/singtoolbox/utils"
 
 	"github.com/sagernet/sing-box/option"
@@ -11,12 +13,12 @@ type VLESSParser struct{}
 func (p VLESSParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 	connURI, err := utils.TryFixURI(connURI)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("VLESSParser.ParseProfile: " + err.Error())
 	}
 
 	uri, addr, port, err := extractCommonURIData(connURI, "vless")
 	if err != nil {
-		return nil, err
+		return nil, errors.New("VLESSParser.ParseProfile: " + err.Error())
 	}
 
 	params := uri.Query()
@@ -28,12 +30,12 @@ func (p VLESSParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	TLSOptions, err := buildOutboundTLSOptions(params, "vless")
 	if err != nil {
-		return nil, err
+		return nil, errors.New("VLESSParser.ParseProfile: " + err.Error())
 	}
 
 	transportOptions, err := buildV2RayTransportOptions(params, "vless")
 	if err != nil {
-		return nil, err
+		return nil, errors.New("VLESSParser.ParseProfile: " + err.Error())
 	}
 
 	o := &option.Outbound{
