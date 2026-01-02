@@ -87,6 +87,9 @@ func DownloadConfigs(inputFile string, outputFile string, timeout time.Duration)
 
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+				continue
+			}
 			// TODO REMOVE
 			// if s := strings.Split(line, "://"); (s[0] != "hy2") && (s[0] != "hysteria2") {
 			// 	continue

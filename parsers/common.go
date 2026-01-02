@@ -159,7 +159,7 @@ func buildV2RayTransportOptions(query url.Values, protocol string) (*option.V2Ra
 	case "splithttp":
 		return nil, errors.New("transport splithttp unsupported")
 	default:
-		return nil, errors.New(fmt.Sprint("unknown transport", type_))
+		return nil, fmt.Errorf("unknown transport %s", type_)
 	}
 
 	return options, nil
@@ -168,7 +168,13 @@ func buildV2RayTransportOptions(query url.Values, protocol string) (*option.V2Ra
 func fixTrojanURI(uri string) (*url.URL, error) {
 	remarkSplitLastIndex := strings.LastIndex(uri, "#")
 
-	beforeRemark := uri[:remarkSplitLastIndex]
+	var beforeRemark string
+	if remarkSplitLastIndex == -1 {
+		beforeRemark = uri
+	} else {
+		beforeRemark = uri[:remarkSplitLastIndex]
+	}
+
 	var remark string
 	if remarkSplitLastIndex < len(uri) {
 		remark = uri[remarkSplitLastIndex+1:]

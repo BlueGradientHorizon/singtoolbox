@@ -16,12 +16,19 @@ func TryFixURI(uri string) (string, error) {
 	}
 
 	// Fix №2: remove spaces in url (before `#`)
-	if i := strings.Index(uri, "#"); i != -1 {
-		beforeRemark := uri[:i]
-		afterRemark := uri[i+1:]
-		beforeRemark = strings.ReplaceAll(beforeRemark, " ", "")
-		uri = beforeRemark + "#" + afterRemark
+	beforeRemarkIndex := strings.Index(uri, "#")
+	if beforeRemarkIndex == -1 {
+		beforeRemarkIndex = len(uri)
 	}
+	beforeRemark := uri[:beforeRemarkIndex]
+	var afterRemark string
+	if beforeRemarkIndex == len(uri) {
+		afterRemark = ""
+	} else {
+		afterRemark = uri[beforeRemarkIndex+1:]
+	}
+	beforeRemark = strings.ReplaceAll(beforeRemark, " ", "")
+	uri = beforeRemark + "#" + afterRemark
 
 	// Fix №3: clean malformed percent encoding
 	uri = cleanMalformedPercentEncoding(uri)
@@ -53,10 +60,12 @@ func TryFixURI(uri string) (string, error) {
 	querySplit := strings.Split(schemeSplit[1], "?")
 	if len(querySplit) == 2 {
 		userSplitIndex := strings.LastIndex(querySplit[0], "@")
-		user := querySplit[0][0:userSplitIndex]
-		addr := querySplit[0][userSplitIndex+1:]
-		userEscaped := url.QueryEscape(user)
-		uri = schemeSplit[0] + "://" + userEscaped + "@" + addr + "?" + querySplit[1]
+		if userSplitIndex != -1 {
+			user := querySplit[0][0:userSplitIndex]
+			addr := querySplit[0][userSplitIndex+1:]
+			userEscaped := url.QueryEscape(user)
+			uri = schemeSplit[0] + "://" + userEscaped + "@" + addr + "?" + querySplit[1]
+		}
 	}
 
 	return uri, nil

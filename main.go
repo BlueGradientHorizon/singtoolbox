@@ -25,15 +25,16 @@ import (
 )
 
 func main() {
-	tools.DownloadConfigs("link_list.txt", "configs.txt", 10*time.Second)
+	inputFile := "link_list.txt"
+	outputFile := "configs.txt"
+	tools.DownloadConfigs(inputFile, outputFile, 10*time.Second)
 
-	filePath := "configs.txt"
-	fmt.Printf("Attempting to load configurations from file: %s\n", filePath)
+	fmt.Printf("Attempting to load configurations from file: %s\n", outputFile)
 
 	var profiles []parsers.ProxyProfile
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(outputFile)
 	if err != nil {
-		// TODO: Handle not found
+		fmt.Printf("File %s not found\n", outputFile)
 		return
 	}
 
@@ -175,7 +176,7 @@ func main() {
 		go printer.Start(printDone)
 
 		sett := testers.NewLatencyTestSettings()
-		sett.Timeout = 15 * time.Second
+		sett.Timeout = 30 * time.Second
 		res := testers.LatencyTest(ctx, sett, outbounds, resChan)
 
 		results = results[:0]

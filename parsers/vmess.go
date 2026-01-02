@@ -3,6 +3,7 @@ package parsers
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -35,9 +36,18 @@ func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		return nil, err
 	}
 
-	var query map[string]string
-	if err := json.Unmarshal(decodedBytes, &query); err != nil {
+	var tempMap map[string]any
+	if err := json.Unmarshal(decodedBytes, &tempMap); err != nil {
 		return nil, err
+	}
+
+	query := map[string]string{}
+	for k, v := range tempMap {
+		if v == nil {
+			query[k] = ""
+			continue
+		}
+		query[k] = fmt.Sprintf("%v", v)
 	}
 
 	params := make(url.Values)

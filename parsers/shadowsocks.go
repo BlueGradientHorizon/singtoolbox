@@ -3,8 +3,9 @@ package parsers
 import (
 	"encoding/base64"
 	"errors"
-	"github.com/bluegradienthorizon/singtoolbox/utils"
 	"strings"
+
+	"github.com/bluegradienthorizon/singtoolbox/utils"
 
 	"github.com/sagernet/sing-box/option"
 )
@@ -22,11 +23,20 @@ func (p ShadowsocksParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		return nil, err
 	}
 
+	decodedHostBytes, err := base64.StdEncoding.DecodeString(uri.Host)
+	if err == nil {
+		decodedHost := string(decodedHostBytes)
+		uri, addr, port, err = extractCommonURIData("ss://"+decodedHost+"#"+uri.RawFragment, "shadowsocks")
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	params := uri.Query()
 
 	var method, password string
 
-	authPart := uri.User.Username()
+	authPart := uri.User.String()
 	uriPassword, _ := uri.User.Password()
 
 	if !strings.Contains(authPart, ":") && uriPassword == "" {
