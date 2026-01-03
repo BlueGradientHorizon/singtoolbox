@@ -151,9 +151,21 @@ func main() {
 
 	var results []testers.LatencyTestResult
 
-	checks := 3
+	latencyTestCtx, latencyTestCtxCancel := context.WithCancel(ctx)
+	defer latencyTestCtxCancel()
 
-	for i := range checks {
+	// go func() {
+	// 	time.Sleep(2 * time.Second)
+	// 	latencyTestCtxCancel()
+	// }()
+
+	rounds := 3
+
+	for i := range rounds {
+		if latencyTestCtx.Err() != nil {
+			println("test ended prematurely: " + latencyTestCtx.Err().Error())
+			break
+		}
 		var outbounds []adapter.Outbound
 		if i == 0 {
 			outbounds = instance.Outbound().Outbounds()
@@ -168,7 +180,7 @@ func main() {
 			break
 		}
 
-		println(fmt.Sprintf("check %d/%d", i+1, checks))
+		println(fmt.Sprintf("round %d/%d", i+1, rounds))
 
 		printer := printers.NewStatsPrinter(len(outbounds))
 		resChan := printer.ResultChan()
@@ -177,7 +189,7 @@ func main() {
 
 		sett := testers.NewLatencyTestSettings()
 		sett.Timeout = 30 * time.Second
-		res := testers.LatencyTest(ctx, sett, outbounds, resChan)
+		res := testers.LatencyTest(latencyTestCtx, sett, outbounds, resChan)
 
 		results = results[:0]
 		for _, r := range res {
@@ -237,14 +249,23 @@ func main() {
 	fmt.Printf("success %d\n", success)
 
 	// for i, o := range filteredOutbounds {
+	// 	downloadTestCtx, downloadTestCtxCancel := context.WithCancel(ctx)
+	// 	defer downloadTestCtxCancel()
+
+	// 	go func() {
+	// 		time.Sleep(2 * time.Second)
+	// 		downloadTestCtxCancel()
+	// 	}()
+
 	// 	if i > 10 {
 	// 		// break
 	// 	}
+
 	// 	dts := testers.NewDownloadTestSettings()
-	// 	dts.TargetBytes = 10 * 1024 * 1024 // enough for tests
-	// 	dts.Timeout = 15 * time.Second     // enough for tests
+	// 	dts.TargetBytes = 10 * 1024 * 1024
+	// 	dts.Timeout = 15 * time.Second
 	// 	dst, err := testers.SpeedTest(
-	// 		ctx,
+	// 		downloadTestCtx,
 	// 		dts,
 	// 		[]adapter.Outbound{o},
 	// 		nil,
@@ -254,35 +275,45 @@ func main() {
 	// 		if dst[0].Error == nil {
 	// 			fmt.Printf("download: %.2f MB/s\n", dst[0].Speed/1024/1024)
 	// 		} else {
-	// 			if strings.Contains(dst[0].Error.Error(), "server gave HTTP response to HTTPS client") {
-	// 				println(fmt.Sprintf("%s #%d %s type:%s", dst[0].Error.Error(), i+1, dst[0].Tag, dst[0].Outbound.Type()))
-	// 			} else {
-	// 				println("download: " + dst[0].Error.Error())
-	// 			}
+	// 			println("download: " + dst[0].Error.Error())
 	// 		}
 	// 	} else {
 	// 		println(err.Error())
 	// 	}
 	// }
 
-	// uts := testers.NewUploadTestSettings()
-	// uts.TargetBytes = 20 * 1024 * 1024
-	// uts.Timeout = 10 * time.Second
-	// ust, err := testers.SpeedTest(
-	// 	ctx,
-	// 	uts,
-	// 	[]adapter.Outbound{filteredResults[0].Outbound},
-	// 	nil,
-	// )
+	// for i, o := range filteredOutbounds {
+	// 	uploadTestCtx, uploadTestCtxCancel := context.WithCancel(ctx)
+	// 	defer uploadTestCtxCancel()
 
-	// if err == nil {
-	// 	if ust[0].Error == nil {
-	// 		fmt.Printf("upload: %.2f MB/s\n", ust[0].Speed/1024/1024)
-	// 	} else {
-	// 		println("upload: " + ust[0].Error.Error())
+	// 	go func() {
+	// 		time.Sleep(2 * time.Second)
+	// 		uploadTestCtxCancel()
+	// 	}()
+
+	// 	if i > 10 {
+	// 		// break
 	// 	}
-	// } else {
-	// 	println(err.Error())
+
+	// 	uts := testers.NewUploadTestSettings()
+	// 	uts.TargetBytes = 10 * 1024 * 1024
+	// 	uts.Timeout = 15 * time.Second
+	// 	ust, err := testers.SpeedTest(
+	// 		uploadTestCtx,
+	// 		uts,
+	// 		[]adapter.Outbound{o},
+	// 		nil,
+	// 	)
+
+	// 	if err == nil {
+	// 		if ust[0].Error == nil {
+	// 			fmt.Printf("upload: %.2f MB/s\n", ust[0].Speed/1024/1024)
+	// 		} else {
+	// 			println("upload: " + ust[0].Error.Error())
+	// 		}
+	// 	} else {
+	// 		println(err.Error())
+	// 	}
 	// }
 
 	fmt.Println("Shutting down...")

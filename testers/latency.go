@@ -43,7 +43,7 @@ func LatencyTest(
 		go func(tag string) {
 			defer wg.Done()
 
-			testCtx, cancel := context.WithTimeout(context.Background(), sett.Timeout)
+			testCtx, cancel := context.WithTimeout(ctx, sett.Timeout)
 			defer cancel()
 
 			internalChan := make(chan LatencyTestResult, 1)
