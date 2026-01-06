@@ -2,22 +2,18 @@ package testers
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-
-	// "net/url"
-	"sync"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/constant"
-	"github.com/sagernet/sing/common/metadata"
-	"github.com/sagernet/sing/common/network"
-	"github.com/sagernet/sing/common/ntp"
+)
+
+const (
+	SpeedCloudflareDown = "https://speed.cloudflare.com/__down"
+	SpeedCloudflareUp   = "https://speed.cloudflare.com/__up"
 )
 
 type SpeedTestResult struct {
@@ -34,9 +30,36 @@ const (
 	Upload
 )
 
+type SpeedTestProvider struct {
+	GetURL        func(mode SpeedTestMode, targetBytes int64) string
+	ModifyRequest func(req *http.Request, mode SpeedTestMode, targetBytes int64)
+}
+
+var CloudflareProvider = SpeedTestProvider{
+	GetURL: func(mode SpeedTestMode, targetBytes int64) string {
+		const (
+			Down = "https://speed.cloudflare.com/__down"
+			Up   = "https://speed.cloudflare.com/__up"
+		)
+		var u string
+		switch mode {
+		case Download:
+			u = fmt.Sprintf("%s?bytes=%d", Down, targetBytes)
+		case Upload:
+			u = Up
+		}
+		return u
+	},
+	ModifyRequest: func(req *http.Request, mode SpeedTestMode, targetBytes int64) {
+		if mode == Upload {
+			req.ContentLength = targetBytes
+		}
+	},
+}
+
 type SpeedTestSettings struct {
 	Mode        SpeedTestMode
-	TestURL     string
+	Provider    SpeedTestProvider
 	Timeout     time.Duration
 	TargetBytes int64
 }
@@ -44,7 +67,7 @@ type SpeedTestSettings struct {
 func NewDownloadTestSettings() SpeedTestSettings {
 	return SpeedTestSettings{
 		Mode:        Download,
-		TestURL:     "https://speed.cloudflare.com/__down",
+		Provider:    CloudflareProvider,
 		Timeout:     20 * time.Second,
 		TargetBytes: 10 * 1024 * 1024,
 	}
@@ -53,145 +76,108 @@ func NewDownloadTestSettings() SpeedTestSettings {
 func NewUploadTestSettings() SpeedTestSettings {
 	return SpeedTestSettings{
 		Mode:        Upload,
-		TestURL:     "https://speed.cloudflare.com/__up",
+		Provider:    CloudflareProvider,
 		Timeout:     20 * time.Second,
 		TargetBytes: 10 * 1024 * 1024,
 	}
 }
 
-func SpeedTest(
-	ctx context.Context,
-	sett SpeedTestSettings,
-	outbounds []adapter.Outbound,
-	outChan chan<- SpeedTestResult,
-) ([]SpeedTestResult, error) {
-	if sett.TestURL == "" {
-		return []SpeedTestResult{}, errors.New("empty link")
-	}
-
-	var wg sync.WaitGroup
-
-	resChan := make(chan SpeedTestResult, len(outbounds))
-
-	for _, o := range outbounds {
-		wg.Add(1)
-		go func(o adapter.Outbound) {
-			defer wg.Done()
-
-			testCtx, cancel := context.WithTimeout(ctx, sett.Timeout)
-			defer cancel()
-
-			internalChan := make(chan SpeedTestResult, 1)
-
-			go func() {
-				speed, err := runSpeedTest(testCtx, sett, o)
-				internalChan <- SpeedTestResult{
-					Tag:      o.Tag(),
-					Speed:    speed,
-					Outbound: o,
-					Error:    err,
-				}
-			}()
-
-			select {
-			case res := <-internalChan:
-				resChan <- res
-				if outChan != nil {
-					outChan <- res
-				}
-			case <-testCtx.Done():
-				r := SpeedTestResult{
-					Tag:      o.Tag(),
-					Speed:    -1,
-					Outbound: o,
-					Error:    testCtx.Err(),
-				}
-				resChan <- r
-				if outChan != nil {
-					outChan <- r
-				}
-			}
-		}(o)
-	}
-
-	go func() {
-		wg.Wait()
-		close(resChan)
-		if outChan != nil {
-			close(outChan)
-		}
-	}()
-
-	var finalResults []SpeedTestResult
-	for res := range resChan {
-		finalResults = append(finalResults, res)
-	}
-	return finalResults, nil
+type SpeedTest struct {
+	ctx      context.Context
+	settings SpeedTestSettings
+	items    []speedTestItem
 }
 
-func runSpeedTest(ctx context.Context, sett SpeedTestSettings, outbound adapter.Outbound) (float64, error) {
-	start := time.Now()
-	bytesProcessed, err := performTransfer(ctx, sett.TestURL, outbound, sett.TargetBytes, sett.Mode)
+type speedTestItem struct {
+	outbound adapter.Outbound
+	client   *http.Client
+}
+
+func NewSpeedTest(ctx context.Context, sett SpeedTestSettings, outbounds []adapter.Outbound) (*SpeedTest, error) {
+	if sett.Provider.GetURL == nil {
+		return nil, errors.New("NewSpeedTest: provider's GetURL is nil")
+	}
+
+	if sett.Provider.ModifyRequest == nil {
+		sett.Provider.ModifyRequest = func(r *http.Request, m SpeedTestMode, b int64) {}
+	}
+
+	items := make([]speedTestItem, len(outbounds))
+	for i, outbound := range outbounds {
+		items[i] = speedTestItem{
+			outbound: outbound,
+			client:   newTestClient(ctx, outbound, nil),
+		}
+	}
+
+	return &SpeedTest{
+		ctx:      ctx,
+		settings: sett,
+		items:    items,
+	}, nil
+}
+
+func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) {
+	runParallel(t.ctx, t.settings.Timeout, len(t.items), func(ctx context.Context, i int) SpeedTestResult {
+		item := t.items[i]
+		defer item.client.CloseIdleConnections()
+
+		val, err := t.runTest(ctx, item)
+		if err != nil {
+			val = -1
+		}
+		return SpeedTestResult{
+			Tag:      item.outbound.Tag(),
+			Speed:    val,
+			Outbound: item.outbound,
+			Error:    err,
+		}
+	}, resChans...)
+}
+
+func (t *SpeedTest) runTest(ctx context.Context, item speedTestItem) (float64, error) {
+	var method string
+	var body io.Reader
+
+	switch t.settings.Mode {
+	case Download:
+		method = http.MethodGet
+	case Upload:
+		method = http.MethodPost
+		body = io.LimitReader(zeroReader{}, t.settings.TargetBytes)
+	}
+
+	finalURL := t.settings.Provider.GetURL(t.settings.Mode, t.settings.TargetBytes)
+
+	req, err := http.NewRequestWithContext(ctx, method, finalURL, body)
 	if err != nil {
 		return 0, err
+	}
+
+	t.settings.Provider.ModifyRequest(req, t.settings.Mode, t.settings.TargetBytes)
+
+	start := time.Now()
+	resp, err := item.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	var bytesProcessed int64
+	if t.settings.Mode == Download {
+		bytesProcessed, err = io.CopyN(io.Discard, resp.Body, t.settings.TargetBytes)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		bytesProcessed = t.settings.TargetBytes
 	}
 
 	elapsed := time.Since(start).Seconds()
 	if elapsed <= 0 {
 		return 0, nil
 	}
-
 	return float64(bytesProcessed) / elapsed, nil
-}
-
-func performTransfer(ctx context.Context, link string, detour network.Dialer, targetBytes int64, mode SpeedTestMode) (int64, error) {
-	var method string
-	var body io.Reader
-	if mode == Download {
-		method = http.MethodGet
-		link = fmt.Sprintf("%s?bytes=%d", link, targetBytes)
-	} else {
-		method = http.MethodPost
-		body = io.LimitReader(zeroReader{}, targetBytes)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, link, body)
-	if err != nil {
-		return -1, err
-	}
-	if mode == Upload {
-		req.ContentLength = targetBytes
-	}
-
-	client := http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return detour.DialContext(ctx, network, metadata.ParseSocksaddr(addr))
-			},
-			DisableKeepAlives: true,
-			TLSClientConfig: &tls.Config{
-				Time:    ntp.TimeFuncFromContext(ctx),
-				RootCAs: adapter.RootPoolFromContext(ctx),
-			},
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-		Timeout: constant.TCPTimeout, // equals to  15 * time.Second
-	}
-	defer client.CloseIdleConnections()
-
-	resp, err := client.Do(req.WithContext(ctx))
-	if err != nil {
-		return -1, err
-	}
-	defer resp.Body.Close()
-
-	if mode == Download {
-		return io.CopyN(io.Discard, resp.Body, targetBytes)
-	} else {
-		return targetBytes, nil
-	}
 }
 
 type zeroReader struct{}

@@ -2,6 +2,7 @@ package printers
 
 import (
 	"fmt"
+
 	"github.com/bluegradienthorizon/singtoolbox/testers"
 )
 
@@ -10,22 +11,19 @@ type StatsPrinter struct {
 	completed int
 	succeeded int
 	failed    int
-	results   chan testers.LatencyTestResult
+	results   <-chan testers.LatencyTestResult
 }
 
-func NewStatsPrinter(total int) *StatsPrinter {
+func NewStatsPrinter(total int, results <-chan testers.LatencyTestResult) *StatsPrinter {
 	return &StatsPrinter{
 		total:   total,
-		results: make(chan testers.LatencyTestResult, 100),
+		results: results,
 	}
 }
 
-func (s *StatsPrinter) ResultChan() chan<- testers.LatencyTestResult {
-	return s.results
-}
-
 func (s *StatsPrinter) Start(done chan<- bool) {
-	for result := range s.results {
+	for range s.total {
+		result := <-s.results
 		s.completed++
 		if result.Error == nil {
 			s.succeeded++
