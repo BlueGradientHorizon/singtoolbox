@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sagernet/sing-box/option"
+	"github.com/bluegradienthorizon/singtoolbox/core"
 )
 
 type ProxyProfile struct {
-	Outbound *option.Outbound
-	ConnURI  string
+	Config  *core.OutboundConfig
+	ConnURI string
 }
 
 type ProfileParser interface {

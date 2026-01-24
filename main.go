@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"net/netip"
 	"os"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/bluegradienthorizon/singtoolbox/adapters/singbox"
+	"github.com/bluegradienthorizon/singtoolbox/core"
 	"github.com/bluegradienthorizon/singtoolbox/parsers"
 	"github.com/bluegradienthorizon/singtoolbox/printers"
 	"github.com/bluegradienthorizon/singtoolbox/testers"
@@ -17,11 +18,8 @@ import (
 	"github.com/bluegradienthorizon/singtoolbox/utils"
 
 	box "github.com/sagernet/sing-box"
-	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/json/badoption"
 )
 
 func main() {
@@ -73,19 +71,29 @@ func main() {
 		return
 	}
 
+	// Create sing-box adapter for converting generic configs
+	sbAdapter := singbox.NewAdapter()
+
 	validationErrorsMap := make(map[string]int)
 
 	i := 0
 	for _, p := range profiles {
+		// Convert generic config to sing-box outbound
+		sbOutbound, err := sbAdapter.ConvertOutbound(p.Config)
+		if err != nil {
+			validationErrorsMap[p.Config.Type+": "+err.Error()]++
+			continue
+		}
+
 		ctx := include.Context(context.Background())
 		instance, err := box.New(box.Options{
 			Context: ctx,
 			Options: option.Options{
-				Outbounds: []option.Outbound{*p.Outbound},
+				Outbounds: []option.Outbound{*sbOutbound},
 			},
 		})
 		if err != nil {
-			validationErrorsMap[p.Outbound.Type+": "+err.Error()]++
+			validationErrorsMap[p.Config.Type+": "+err.Error()]++
 			continue
 		}
 		instance.Close()
@@ -101,32 +109,26 @@ func main() {
 	}
 
 	for i := range profiles {
-		(&profiles[i]).Outbound.Tag = fmt.Sprintf("outbound-%d", i)
+		profiles[i].Config.Tag = fmt.Sprintf("outbound-%d", i)
 	}
 
 	ctx := include.Context(context.Background())
 
 	var outbounds []option.Outbound
 	for _, p := range profiles {
-		outbounds = append(outbounds, *p.Outbound)
+		// Convert generic config to sing-box outbound
+		sbOutbound, err := sbAdapter.ConvertOutbound(p.Config)
+		if err != nil {
+			fmt.Printf("Failed to convert config: %v\n", err)
+			continue
+		}
+		outbounds = append(outbounds, *sbOutbound)
 	}
 
 	opts := option.Options{
 		Log: &option.LogOptions{
 			Level:     "panic",
 			Timestamp: true,
-		},
-		Inbounds: []option.Inbound{
-			{
-				Type: "socks",
-				Tag:  "socks-in",
-				Options: &option.SocksInboundOptions{
-					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
-						ListenPort: 1080,
-					},
-				},
-			},
 		},
 		Outbounds: outbounds,
 	}
@@ -166,43 +168,64 @@ func main() {
 			println("test ended prematurely: " + latencyTestCtx.Err().Error())
 			break
 		}
-		var outbounds []adapter.Outbound
+		var wrappedOutbounds []core.Outbound
 		if i == 0 {
-			outbounds = instance.Outbound().Outbounds()
+			// Wrap sing-box outbounds for first round
+			sbOutbounds := instance.Outbound().Outbounds()
+			for _, sbOut := range sbOutbounds {
+				wrappedOutbounds = append(wrappedOutbounds, singbox.NewOutboundWrapper(sbOut))
+			}
 		} else {
+			// Rebuild outbounds from previous results by tag
 			for _, r := range results {
-				outbounds = append(outbounds, r.Outbound)
+				// Find the outbound by tag
+				sbOutbounds := instance.Outbound().Outbounds()
+				for _, sbOut := range sbOutbounds {
+					if sbOut.Tag() == r.Tag {
+						wrappedOutbounds = append(wrappedOutbounds, singbox.NewOutboundWrapper(sbOut))
+						break
+					}
+				}
 			}
 		}
 
-		if len(outbounds) == 0 {
+		if len(wrappedOutbounds) == 0 {
 			println("no working profiles left")
 			break
 		}
 
 		println(fmt.Sprintf("round %d/%d", i+1, rounds))
 
-		printerChan := make(chan testers.LatencyTestResult, len(outbounds))
+		printerChan := make(chan testers.LatencyTestResult, len(wrappedOutbounds))
 		defer close(printerChan)
-		printer := printers.NewStatsPrinter(len(outbounds), printerChan)
+		printer := printers.NewStatsPrinter(len(wrappedOutbounds), printerChan)
 		printDone := make(chan bool)
 		go printer.Start(printDone)
 
 		sett := testers.NewLatencyTestSettings()
 		sett.Timeout = 10 * time.Second
 
-		lt, err := testers.NewLatencyTest(latencyTestCtx, sett, outbounds)
+		// Convert outbounds to ProxyInfo and DialerFunc for generic testers
+		var proxies []testers.ProxyInfo
+		var dialers []testers.DialerFunc
+		for _, outbound := range wrappedOutbounds {
+			proxies = append(proxies, singbox.OutboundToProxyInfo(outbound))
+			dialers = append(dialers, singbox.CreateDialerFunc(outbound, nil))
+		}
+		tlsConfigProvider := singbox.CreateTLSConfigProvider()
+
+		lt, err := testers.NewLatencyTest(latencyTestCtx, sett, proxies, dialers, tlsConfigProvider)
 		if err != nil {
 			println(err.Error())
 			continue
 		}
 
-		ltResChan := make(chan testers.LatencyTestResult, len(outbounds))
+		ltResChan := make(chan testers.LatencyTestResult, len(wrappedOutbounds))
 		defer close(ltResChan)
 		lt.Run(ltResChan, printerChan)
 
 		results = nil
-		for range len(outbounds) {
+		for range len(wrappedOutbounds) {
 			r := <-ltResChan
 			if r.Error == nil {
 				results = append(results, r)
@@ -234,9 +257,16 @@ func main() {
 		return 0
 	})
 
-	var filteredOutbounds []adapter.Outbound
+	var filteredOutbounds []core.Outbound
 	for _, r := range sortedResults {
-		filteredOutbounds = append(filteredOutbounds, r.Outbound)
+		// Find the outbound by tag
+		sbOutbounds := instance.Outbound().Outbounds()
+		for _, sbOut := range sbOutbounds {
+			if sbOut.Tag() == r.Tag {
+				filteredOutbounds = append(filteredOutbounds, singbox.NewOutboundWrapper(sbOut))
+				break
+			}
+		}
 	}
 
 	success := 0
@@ -247,7 +277,7 @@ func main() {
 		if r.Error == nil {
 			success++
 			i := slices.IndexFunc(profiles, func(p parsers.ProxyProfile) bool {
-				return p.Outbound.Tag == r.Tag
+				return p.Config.Tag == r.Tag
 			})
 			if i == -1 {
 				i = 0
@@ -259,13 +289,13 @@ func main() {
 
 	fmt.Printf("success %d\n", success)
 
-	// speed(ctx, filteredOutbounds, true)
+	// Speed(ctx, filteredOutbounds, true)
 
 	fmt.Println("Shutting down...")
 	instance.Close()
 }
 
-func speed(ctx context.Context, o []adapter.Outbound, upl bool) {
+func Speed(ctx context.Context, o []core.Outbound, upl bool) {
 	var ts testers.SpeedTestSettings
 	if !upl {
 		ts = testers.NewDownloadTestSettings()
@@ -276,7 +306,7 @@ func speed(ctx context.Context, o []adapter.Outbound, upl bool) {
 	ts.TargetBytes = 10 * 1024 * 1024
 	ts.Timeout = 10 * time.Second
 
-	for i, o := range o {
+	for i, outbound := range o {
 		if i > 10 {
 			// break
 		}
@@ -292,7 +322,12 @@ func speed(ctx context.Context, o []adapter.Outbound, upl bool) {
 		resChan := make(chan testers.SpeedTestResult)
 		defer close(resChan)
 
-		st, err := testers.NewSpeedTest(testCtx, ts, []adapter.Outbound{o})
+		// Convert outbound to ProxyInfo and DialerFunc for generic testers
+		proxies := []testers.ProxyInfo{singbox.OutboundToProxyInfo(outbound)}
+		dialers := []testers.DialerFunc{singbox.CreateDialerFunc(outbound, nil)}
+		tlsConfigProvider := singbox.CreateTLSConfigProvider()
+
+		st, err := testers.NewSpeedTest(testCtx, ts, proxies, dialers, tlsConfigProvider)
 
 		st.Run(resChan)
 		r := <-resChan

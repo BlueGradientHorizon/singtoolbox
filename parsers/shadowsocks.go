@@ -5,9 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/bluegradienthorizon/singtoolbox/core"
 	"github.com/bluegradienthorizon/singtoolbox/utils"
-
-	"github.com/sagernet/sing-box/option"
 )
 
 type ShadowsocksParser struct{}
@@ -64,20 +63,20 @@ func (p ShadowsocksParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		}
 	}
 
-	o := &option.Outbound{
-		Type: "shadowsocks",
-		Options: &option.ShadowsocksOutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     addr,
-				ServerPort: port,
-			},
+	// Create generic OutboundConfig with Shadowsocks settings
+	config := &core.OutboundConfig{
+		Tag:    uri.Fragment,
+		Type:   "shadowsocks",
+		Server: addr,
+		Port:   port,
+		Settings: core.ShadowsocksSettings{
 			Method:   method,
 			Password: password,
 		},
 	}
 
 	return &ProxyProfile{
-		Outbound: o,
-		ConnURI:  connURI,
+		Config:  config,
+		ConnURI: connURI,
 	}, nil
 }

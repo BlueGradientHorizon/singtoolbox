@@ -6,13 +6,18 @@ import (
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing/common/metadata"
-	N "github.com/sagernet/sing/common/network"
-	"github.com/sagernet/sing/common/ntp"
 )
 
+// DialerFunc is a generic function type for establishing connections.
+// It abstracts away the specific proxy core implementation details.
+type DialerFunc func(ctx context.Context, network, address string) (net.Conn, error)
+
+// TLSConfigProvider is a function that provides TLS configuration for HTTP clients.
+// This allows different proxy cores to inject their own TLS settings.
+type TLSConfigProvider func(ctx context.Context) *tls.Config
+
+// runParallel executes a test function in parallel across multiple goroutines.
+// Results are sent to all provided result channels.
 func runParallel[R any](
 	ctx context.Context,
 	timeout time.Duration,
@@ -36,20 +41,25 @@ func runParallel[R any](
 	}
 }
 
-func newTestClient(ctx context.Context, detour N.Dialer, dialerMiddleware func(N.Dialer, context.Context, string, string) (net.Conn, error)) *http.Client {
+// newTestClient creates an HTTP client with a custom dialer and optional TLS configuration.
+// This is the core-agnostic version that works with any proxy implementation.
+func newTestClient(ctx context.Context, dialer DialerFunc, tlsConfigProvider TLSConfigProvider) *http.Client {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: false,
+	}
+
+	// Allow proxy cores to provide custom TLS configuration
+	if tlsConfigProvider != nil {
+		if customTLS := tlsConfigProvider(ctx); customTLS != nil {
+			tlsConfig = customTLS
+		}
+	}
+
 	return &http.Client{
 		Transport: &http.Transport{
 			DisableKeepAlives: true,
-			TLSClientConfig: &tls.Config{
-				Time:    ntp.TimeFuncFromContext(ctx),
-				RootCAs: adapter.RootPoolFromContext(ctx),
-			},
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				if dialerMiddleware != nil {
-					return dialerMiddleware(detour, ctx, network, addr)
-				}
-				return detour.DialContext(ctx, network, metadata.ParseSocksaddr(addr))
-			},
+			TLSClientConfig:   tlsConfig,
+			DialContext:       dialer,
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse

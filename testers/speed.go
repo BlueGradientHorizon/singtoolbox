@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	"github.com/sagernet/sing-box/adapter"
 )
 
 const (
@@ -16,13 +14,15 @@ const (
 	SpeedCloudflareUp   = "https://speed.cloudflare.com/__up"
 )
 
+// SpeedTestResult contains the result of a speed test for a single proxy.
 type SpeedTestResult struct {
-	Tag      string
-	Speed    float64
-	Outbound adapter.Outbound
-	Error    error
+	Tag   string
+	Speed float64
+	Proxy ProxyInfo
+	Error error
 }
 
+// SpeedTestMode indicates whether to test download or upload speed.
 type SpeedTestMode int
 
 const (
@@ -30,11 +30,13 @@ const (
 	Upload
 )
 
+// SpeedTestProvider defines how to construct speed test requests.
 type SpeedTestProvider struct {
 	GetURL        func(mode SpeedTestMode, targetBytes int64) string
 	ModifyRequest func(req *http.Request, mode SpeedTestMode, targetBytes int64)
 }
 
+// CloudflareProvider is a speed test provider using Cloudflare's speed test endpoints.
 var CloudflareProvider = SpeedTestProvider{
 	GetURL: func(mode SpeedTestMode, targetBytes int64) string {
 		const (
@@ -57,6 +59,7 @@ var CloudflareProvider = SpeedTestProvider{
 	},
 }
 
+// SpeedTestSettings configures the speed test behavior.
 type SpeedTestSettings struct {
 	Mode        SpeedTestMode
 	Provider    SpeedTestProvider
@@ -64,6 +67,7 @@ type SpeedTestSettings struct {
 	TargetBytes int64
 }
 
+// NewDownloadTestSettings creates default download speed test settings.
 func NewDownloadTestSettings() SpeedTestSettings {
 	return SpeedTestSettings{
 		Mode:        Download,
@@ -73,6 +77,7 @@ func NewDownloadTestSettings() SpeedTestSettings {
 	}
 }
 
+// NewUploadTestSettings creates default upload speed test settings.
 func NewUploadTestSettings() SpeedTestSettings {
 	return SpeedTestSettings{
 		Mode:        Upload,
@@ -82,6 +87,7 @@ func NewUploadTestSettings() SpeedTestSettings {
 	}
 }
 
+// SpeedTest performs speed testing on multiple proxies in parallel.
 type SpeedTest struct {
 	ctx      context.Context
 	settings SpeedTestSettings
@@ -89,11 +95,19 @@ type SpeedTest struct {
 }
 
 type speedTestItem struct {
-	outbound adapter.Outbound
-	client   *http.Client
+	proxy  ProxyInfo
+	client *http.Client
 }
 
-func NewSpeedTest(ctx context.Context, sett SpeedTestSettings, outbounds []adapter.Outbound) (*SpeedTest, error) {
+// NewSpeedTest creates a new speed test with the given proxies.
+// Each proxy is represented by a ProxyInfo and a DialerFunc that establishes connections.
+func NewSpeedTest(
+	ctx context.Context,
+	sett SpeedTestSettings,
+	proxies []ProxyInfo,
+	dialers []DialerFunc,
+	tlsConfigProvider TLSConfigProvider,
+) (*SpeedTest, error) {
 	if sett.Provider.GetURL == nil {
 		return nil, errors.New("NewSpeedTest: provider's GetURL is nil")
 	}
@@ -102,11 +116,15 @@ func NewSpeedTest(ctx context.Context, sett SpeedTestSettings, outbounds []adapt
 		sett.Provider.ModifyRequest = func(r *http.Request, m SpeedTestMode, b int64) {}
 	}
 
-	items := make([]speedTestItem, len(outbounds))
-	for i, outbound := range outbounds {
+	if len(proxies) != len(dialers) {
+		return nil, errors.New("NewSpeedTest: proxies and dialers length mismatch")
+	}
+
+	items := make([]speedTestItem, len(proxies))
+	for i := range proxies {
 		items[i] = speedTestItem{
-			outbound: outbound,
-			client:   newTestClient(ctx, outbound, nil),
+			proxy:  proxies[i],
+			client: newTestClient(ctx, dialers[i], tlsConfigProvider),
 		}
 	}
 
@@ -117,6 +135,8 @@ func NewSpeedTest(ctx context.Context, sett SpeedTestSettings, outbounds []adapt
 	}, nil
 }
 
+// Run executes the speed test for all proxies in parallel.
+// Results are sent to all provided result channels.
 func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) {
 	runParallel(t.ctx, t.settings.Timeout, len(t.items), func(ctx context.Context, i int) SpeedTestResult {
 		item := t.items[i]
@@ -127,10 +147,10 @@ func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) {
 			val = -1
 		}
 		return SpeedTestResult{
-			Tag:      item.outbound.Tag(),
-			Speed:    val,
-			Outbound: item.outbound,
-			Error:    err,
+			Tag:   item.proxy.Tag,
+			Speed: val,
+			Proxy: item.proxy,
+			Error: err,
 		}
 	}, resChans...)
 }

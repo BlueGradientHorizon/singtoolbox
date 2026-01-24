@@ -3,9 +3,8 @@ package parsers
 import (
 	"errors"
 
+	"github.com/bluegradienthorizon/singtoolbox/core"
 	"github.com/bluegradienthorizon/singtoolbox/utils"
-
-	"github.com/sagernet/sing-box/option"
 )
 
 type VLESSParser struct{}
@@ -38,24 +37,22 @@ func (p VLESSParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		return nil, errors.New("VLESSParser.ParseProfile: " + err.Error())
 	}
 
-	o := &option.Outbound{
-		Type: "vless",
-		Options: &option.VLESSOutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     addr,
-				ServerPort: port,
-			},
+	// Create generic OutboundConfig with VLESS settings
+	config := &core.OutboundConfig{
+		Tag:    uri.Fragment,
+		Type:   "vless",
+		Server: addr,
+		Port:   port,
+		Settings: core.VLESSSettings{
 			UUID: uri.User.Username(),
-			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
-				TLS: TLSOptions,
-			},
-			Transport: transportOptions,
-			Flow:      flow,
+			Flow: flow,
 		},
+		TLS:       TLSOptions,
+		Transport: transportOptions,
 	}
 
 	return &ProxyProfile{
-		Outbound: o,
-		ConnURI:  connURI,
+		Config:  config,
+		ConnURI: connURI,
 	}, nil
 }

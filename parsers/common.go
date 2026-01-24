@@ -10,13 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	C "github.com/sagernet/sing-box/constant"
-	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common/json/badoption"
+	"github.com/bluegradienthorizon/singtoolbox/core"
 )
 
-func buildOutboundTLSOptions(query url.Values, protocol string) (*option.OutboundTLSOptions, error) {
-	options := &option.OutboundTLSOptions{}
+func buildOutboundTLSOptions(query url.Values, protocol string) (*core.TLSConfig, error) {
+	config := &core.TLSConfig{}
 
 	securityKey := "security"
 
@@ -41,58 +39,45 @@ func buildOutboundTLSOptions(query url.Values, protocol string) (*option.Outboun
 		}
 
 		if security != "none" {
-			options.Enabled = true
+			config.Enabled = true
 		}
 
-		options.ServerName = sni
-
-		options.UTLS = &option.OutboundUTLSOptions{}
-		if fp != "" {
-			options.UTLS.Enabled = true
-			options.UTLS.Fingerprint = fp
-		}
+		config.ServerName = sni
+		config.Fingerprint = fp
 
 		if alpn != "" {
-			options.ALPN = badoption.Listable[string]{}
 			parts := strings.Split(alpn, ",")
-			for _, val := range parts {
-				options.ALPN = append(options.ALPN, val)
-			}
+			config.ALPN = parts
 		}
 
 		if ech != "" {
-			options.ECH = &option.OutboundECHOptions{
-				Enabled: true,
-				Config:  []string{ech},
+			config.ECH = &core.ECHConfig{
+				Config: []string{ech},
 			}
 		}
 
 		if insecure || allowInsecure {
-			options.Insecure = true
+			config.Insecure = true
 		}
 	}
 
 	if security == "reality" {
-		options.Reality = &option.OutboundRealityOptions{
-			Enabled:   true,
+		config.Reality = &core.RealityConfig{
 			PublicKey: pbk,
 			ShortID:   sid,
 		}
 
-		// uTLS is required by reality client
-		options.UTLS.Enabled = true
-		if fp != "" {
-			options.UTLS.Fingerprint = fp
-		} else {
-			options.UTLS.Fingerprint = "chrome"
+		// uTLS fingerprint is required by reality client
+		if fp == "" {
+			config.Fingerprint = "chrome"
 		}
 	}
 
-	return options, nil
+	return config, nil
 }
 
-func buildV2RayTransportOptions(query url.Values, protocol string) (*option.V2RayTransportOptions, error) {
-	options := &option.V2RayTransportOptions{}
+func buildV2RayTransportOptions(query url.Values, protocol string) (*core.TransportConfig, error) {
+	config := &core.TransportConfig{}
 
 	typeKey := "type"
 	serviceNameKey := "serviceName"
@@ -117,38 +102,36 @@ func buildV2RayTransportOptions(query url.Values, protocol string) (*option.V2Ra
 
 	switch type_ {
 	case "", "raw", "tcp":
-		// Transport not needed
+		config.Type = "tcp"
 	case "http", "h2":
-		options.Type = C.V2RayTransportTypeHTTP
-		options.HTTPOptions = option.V2RayHTTPOptions{
+		config.Type = "http"
+		config.HTTP = &core.HTTPConfig{
 			Host:   []string{host},
 			Path:   path,
 			Method: "GET",
-			// Headers: , // TODO ??
 		}
 	case "ws", "websocket":
-		options.Type = C.V2RayTransportTypeWebsocket
+		config.Type = "ws"
 		if path == "" {
 			path = "/"
 		}
-		options.WebsocketOptions = option.V2RayWebsocketOptions{
+		config.WebSocket = &core.WebSocketConfig{
 			Path: path,
-			// Headers: , // TODO ??
+			Host: host,
 		}
 	case "quic":
-		options.Type = C.V2RayTransportTypeQUIC
-		options.QUICOptions = option.V2RayQUICOptions{}
+		config.Type = "quic"
+		config.QUIC = &core.QUICConfig{}
 	case "grpc":
-		options.Type = C.V2RayTransportTypeGRPC
-		options.GRPCOptions = option.V2RayGRPCOptions{
+		config.Type = "grpc"
+		config.GRPC = &core.GRPCConfig{
 			ServiceName: serviceName,
 		}
 	case "httpupgrade":
-		options.Type = C.V2RayTransportTypeHTTPUpgrade
-		options.HTTPUpgradeOptions = option.V2RayHTTPUpgradeOptions{
+		config.Type = "httpupgrade"
+		config.HTTPUpgrade = &core.HTTPUpgradeConfig{
 			Host: host,
 			Path: path,
-			// Headers: , // TODO ??
 		}
 	case "kcp":
 		return nil, errors.New("buildV2RayTransportOptions: transport kcp unsupported")
@@ -162,7 +145,7 @@ func buildV2RayTransportOptions(query url.Values, protocol string) (*option.V2Ra
 		return nil, fmt.Errorf("buildV2RayTransportOptions: unknown transport %s", type_)
 	}
 
-	return options, nil
+	return config, nil
 }
 
 func fixTrojanURI(uri string) (*url.URL, error) {

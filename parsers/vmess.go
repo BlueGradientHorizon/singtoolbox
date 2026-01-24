@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sagernet/sing-box/option"
+	"github.com/bluegradienthorizon/singtoolbox/core"
 )
 
 type VMessParser struct{}
@@ -76,24 +76,21 @@ func (p VMessParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		return nil, errors.New("VMessParser.ParseProfile: " + err.Error())
 	}
 
-	o := &option.Outbound{
-		Type: "vmess",
-		Options: &option.VMessOutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     addr,
-				ServerPort: port,
-			},
+	config := &core.OutboundConfig{
+		Type:   "vmess",
+		Server: addr,
+		Port:   port,
+		Settings: core.VMessSettings{
 			UUID:     id,
+			AlterID:  0, // VMess alterId is legacy, typically 0
 			Security: security,
-			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
-				TLS: TLSOptions,
-			},
-			Transport: transportOptions,
 		},
+		TLS:       TLSOptions,
+		Transport: transportOptions,
 	}
 
 	return &ProxyProfile{
-		Outbound: o,
-		ConnURI:  connURI,
+		Config:  config,
+		ConnURI: connURI,
 	}, nil
 }

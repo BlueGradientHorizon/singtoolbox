@@ -3,9 +3,8 @@ package parsers
 import (
 	"errors"
 
+	"github.com/bluegradienthorizon/singtoolbox/core"
 	"github.com/bluegradienthorizon/singtoolbox/utils"
-
-	"github.com/sagernet/sing-box/option"
 )
 
 type Hysteria2Parser struct{}
@@ -13,12 +12,12 @@ type Hysteria2Parser struct{}
 func (p Hysteria2Parser) ParseProfile(connURI string) (*ProxyProfile, error) {
 	connURI, err := utils.TryFixURI(connURI)
 	if err != nil {
-		return nil, errors.New("Hysteria2Parser.ParseProfile: "+err.Error())
+		return nil, errors.New("Hysteria2Parser.ParseProfile: " + err.Error())
 	}
 
-	uri, addr, port, err := extractCommonURIData(connURI, "vless")
+	uri, addr, port, err := extractCommonURIData(connURI, "hysteria2")
 	if err != nil {
-		return nil, errors.New("Hysteria2Parser.ParseProfile: "+err.Error())
+		return nil, errors.New("Hysteria2Parser.ParseProfile: " + err.Error())
 	}
 
 	params := uri.Query()
@@ -30,41 +29,40 @@ func (p Hysteria2Parser) ParseProfile(connURI string) (*ProxyProfile, error) {
 	salamanderPassword := params.Get("obfs-password")
 	password := uri.User.Username()
 
-	var obfs *option.Hysteria2Obfs
+	// Create Hysteria2Settings with obfuscation if present
+	settings := core.Hysteria2Settings{
+		Password: password,
+	}
+
 	if obfsType != "" && salamanderPassword != "" {
-		obfs = &option.Hysteria2Obfs{
+		settings.Obfs = &core.ObfsConfig{
 			Type:     obfsType,
 			Password: salamanderPassword,
 		}
 	}
 
-	TLSOptions := &option.OutboundTLSOptions{
+	// Build TLS configuration
+	tlsConfig := &core.TLSConfig{
 		Enabled:    true,
 		ServerName: sni,
 		Insecure:   insecure,
 	}
 
 	if sni == "" {
-		TLSOptions.Insecure = true
+		tlsConfig.Insecure = true
 	}
 
-	o := &option.Outbound{
-		Type: "hysteria2",
-		Options: &option.Hysteria2OutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     addr,
-				ServerPort: port,
-			},
-			Obfs: obfs,
-			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
-				TLS: TLSOptions,
-			},
-			Password: password,
-		},
+	// Create generic OutboundConfig
+	config := &core.OutboundConfig{
+		Type:     "hysteria2",
+		Server:   addr,
+		Port:     port,
+		Settings: settings,
+		TLS:      tlsConfig,
 	}
 
 	return &ProxyProfile{
-		Outbound: o,
-		ConnURI:  connURI,
+		Config:  config,
+		ConnURI: connURI,
 	}, nil
 }

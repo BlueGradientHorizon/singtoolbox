@@ -6,11 +6,6 @@ import (
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/metadata"
-	N "github.com/sagernet/sing/common/network"
 )
 
 const (
@@ -20,18 +15,28 @@ const (
 	CPCloudflare204   = "https://cp.cloudflare.com/generate_204"
 )
 
-type LatencyTestResult struct {
-	Tag      string
-	Delay    int32
-	Outbound adapter.Outbound
-	Error    error
+// ProxyInfo contains minimal information about a proxy for testing.
+// This is intentionally generic to avoid coupling to any specific proxy core.
+type ProxyInfo struct {
+	Tag  string // Unique identifier for the proxy
+	Type string // Protocol type (vless, trojan, vmess, etc.)
 }
 
+// LatencyTestResult contains the result of a latency test for a single proxy.
+type LatencyTestResult struct {
+	Tag   string
+	Delay int32
+	Proxy ProxyInfo
+	Error error
+}
+
+// LatencyTestSettings configures the latency test behavior.
 type LatencyTestSettings struct {
 	TestURL string
 	Timeout time.Duration
 }
 
+// NewLatencyTestSettings creates default latency test settings.
 func NewLatencyTestSettings() LatencyTestSettings {
 	return LatencyTestSettings{
 		TestURL: Google204,
@@ -39,6 +44,7 @@ func NewLatencyTestSettings() LatencyTestSettings {
 	}
 }
 
+// LatencyTest performs latency testing on multiple proxies in parallel.
 type LatencyTest struct {
 	ctx      context.Context
 	settings LatencyTestSettings
@@ -46,35 +52,42 @@ type LatencyTest struct {
 }
 
 type latencyTestItem struct {
-	outbound adapter.Outbound
-	client   *http.Client
-	start    *time.Time
+	proxy  ProxyInfo
+	client *http.Client
+	start  *time.Time
 }
 
-func NewLatencyTest(ctx context.Context, sett LatencyTestSettings, outbounds []adapter.Outbound) (*LatencyTest, error) {
+// NewLatencyTest creates a new latency test with the given proxies.
+// Each proxy is represented by a ProxyInfo and a DialerFunc that establishes connections.
+func NewLatencyTest(
+	ctx context.Context,
+	sett LatencyTestSettings,
+	proxies []ProxyInfo,
+	dialers []DialerFunc,
+	tlsConfigProvider TLSConfigProvider,
+) (*LatencyTest, error) {
 	if sett.TestURL == "" {
 		return nil, errors.New("LatencyTest: empty settings link")
 	}
 
-	items := make([]latencyTestItem, len(outbounds))
-	for i, outbound := range outbounds {
+	if len(proxies) != len(dialers) {
+		return nil, errors.New("LatencyTest: proxies and dialers length mismatch")
+	}
+
+	items := make([]latencyTestItem, len(proxies))
+	for i := range proxies {
 		var startTime time.Time
-		dialerMiddleware := func(detour N.Dialer, ctx context.Context, network, addr string) (net.Conn, error) {
+
+		// Wrap the dialer to capture start time
+		timedDialer := func(ctx context.Context, network, addr string) (net.Conn, error) {
 			startTime = time.Now()
-			instance, err := detour.DialContext(ctx, network, metadata.ParseSocksaddr(addr))
-			if err != nil {
-				return nil, err
-			}
-			if earlyConn, isEarlyConn := common.Cast[N.EarlyConn](instance); isEarlyConn && earlyConn.NeedHandshake() {
-				startTime = time.Now()
-			}
-			return instance, nil
+			return dialers[i](ctx, network, addr)
 		}
 
 		items[i] = latencyTestItem{
-			outbound: outbound,
-			client:   newTestClient(ctx, outbound, dialerMiddleware),
-			start:    &startTime,
+			proxy:  proxies[i],
+			client: newTestClient(ctx, timedDialer, tlsConfigProvider),
+			start:  &startTime,
 		}
 	}
 
@@ -85,6 +98,8 @@ func NewLatencyTest(ctx context.Context, sett LatencyTestSettings, outbounds []a
 	}, nil
 }
 
+// Run executes the latency test for all proxies in parallel.
+// Results are sent to all provided result channels.
 func (t *LatencyTest) Run(resChans ...chan<- LatencyTestResult) {
 	runParallel(t.ctx, t.settings.Timeout, len(t.items), func(ctx context.Context, i int) LatencyTestResult {
 		item := t.items[i]
@@ -95,10 +110,10 @@ func (t *LatencyTest) Run(resChans ...chan<- LatencyTestResult) {
 			val = -1
 		}
 		return LatencyTestResult{
-			Tag:      item.outbound.Tag(),
-			Delay:    int32(val),
-			Outbound: item.outbound,
-			Error:    err,
+			Tag:   item.proxy.Tag,
+			Delay: int32(val),
+			Proxy: item.proxy,
+			Error: err,
 		}
 	}, resChans...)
 }

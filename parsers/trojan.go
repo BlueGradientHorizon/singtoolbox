@@ -3,9 +3,8 @@ package parsers
 import (
 	"errors"
 
+	"github.com/bluegradienthorizon/singtoolbox/core"
 	"github.com/bluegradienthorizon/singtoolbox/utils"
-
-	"github.com/sagernet/sing-box/option"
 )
 
 type TrojanParser struct{}
@@ -35,23 +34,21 @@ func (p TrojanParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 		return nil, errors.New("TrojanParser.ParseProfile: " + err.Error())
 	}
 
-	o := &option.Outbound{
-		Type: "trojan",
-		Options: &option.TrojanOutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     addr,
-				ServerPort: port,
-			},
+	// Create generic OutboundConfig with Trojan settings
+	config := &core.OutboundConfig{
+		Tag:    url.Fragment,
+		Type:   "trojan",
+		Server: addr,
+		Port:   port,
+		Settings: core.TrojanSettings{
 			Password: password,
-			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
-				TLS: TLSOptions,
-			},
-			Transport: transportOptions,
 		},
+		TLS:       TLSOptions,
+		Transport: transportOptions,
 	}
 
 	return &ProxyProfile{
-		Outbound: o,
-		ConnURI:  connURI,
+		Config:  config,
+		ConnURI: connURI,
 	}, nil
 }
