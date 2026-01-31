@@ -36,7 +36,6 @@ func (p TrojanParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	// Create generic OutboundConfig with Trojan settings
 	config := &core.OutboundConfig{
-		Tag:    url.Fragment,
 		Type:   "trojan",
 		Server: addr,
 		Port:   port,

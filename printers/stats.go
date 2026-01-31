@@ -22,6 +22,7 @@ func NewStatsPrinter(total int, results <-chan testers.LatencyTestResult) *Stats
 }
 
 func (s *StatsPrinter) Start(done chan<- bool) {
+	s.printStats()
 	for range s.total {
 		result := <-s.results
 		s.completed++

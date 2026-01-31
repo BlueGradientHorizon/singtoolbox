@@ -65,7 +65,6 @@ func (p ShadowsocksParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	// Create generic OutboundConfig with Shadowsocks settings
 	config := &core.OutboundConfig{
-		Tag:    uri.Fragment,
 		Type:   "shadowsocks",
 		Server: addr,
 		Port:   port,

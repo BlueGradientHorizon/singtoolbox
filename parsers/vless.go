@@ -39,7 +39,6 @@ func (p VLESSParser) ParseProfile(connURI string) (*ProxyProfile, error) {
 
 	// Create generic OutboundConfig with VLESS settings
 	config := &core.OutboundConfig{
-		Tag:    uri.Fragment,
 		Type:   "vless",
 		Server: addr,
 		Port:   port,

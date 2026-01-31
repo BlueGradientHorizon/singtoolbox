@@ -32,9 +32,16 @@ func runParallel[R any](
 
 			res := testFunc(testCtx, index)
 
+			// Send to all channels, but handle closed channels gracefully
 			for _, c := range resChans {
 				if c != nil {
-					c <- res
+					select {
+					case c <- res:
+						// Successfully sent
+					case <-ctx.Done():
+						// Context cancelled, stop sending
+						return
+					}
 				}
 			}
 		}(i)
