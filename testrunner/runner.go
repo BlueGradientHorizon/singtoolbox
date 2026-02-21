@@ -261,7 +261,7 @@ func (tr *TestRunner) GetOutbounds() []core.Outbound {
 
 // testRunner is a generic interface for running tests
 type testRunner[T any] interface {
-	Run(resChans ...chan<- T)
+	Run(resChans ...chan<- T) func()
 }
 
 // runTestRound is a generic helper that executes a single round of tests on the provided outbounds.
@@ -346,11 +346,12 @@ func runTestRound[T any](
 			}()
 		}
 
-		// Run test with progress callback
+		// Run test with progress callback and get wait function
+		var wait func()
 		if progressChan != nil {
-			test.Run(batchResultChan, progressChan)
+			wait = test.Run(batchResultChan, progressChan)
 		} else {
-			test.Run(batchResultChan)
+			wait = test.Run(batchResultChan)
 		}
 
 		// Collect batch results
@@ -359,11 +360,13 @@ func runTestRound[T any](
 			results = append(results, result)
 		}
 
-		// Close batch channels - close batchResultChan first to signal completion
+		// Wait for all goroutines to complete before closing channels
+		wait()
+
+		// Close batch channels
 		close(batchResultChan)
 
 		// If progress channel exists, close it after all results are collected
-		// This ensures all goroutines have finished sending
 		if progressChan != nil {
 			close(progressChan)
 			<-progressDone // Wait for progress handler to finish

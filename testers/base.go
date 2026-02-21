@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -18,15 +19,21 @@ type TLSConfigProvider func(ctx context.Context) *tls.Config
 
 // runParallel executes a test function in parallel across multiple goroutines.
 // Results are sent to all provided result channels.
+// Returns a function that waits for all goroutines to complete.
 func runParallel[R any](
 	ctx context.Context,
 	timeout time.Duration,
 	count int,
 	testFunc func(context.Context, int) R,
 	resChans ...chan<- R,
-) {
+) func() {
+	var wg sync.WaitGroup
+
 	for i := range count {
+		wg.Add(1)
 		go func(index int) {
+			defer wg.Done()
+
 			testCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 
@@ -46,6 +53,8 @@ func runParallel[R any](
 			}
 		}(i)
 	}
+
+	return wg.Wait
 }
 
 // newTestClient creates an HTTP client with a custom dialer and optional TLS configuration.

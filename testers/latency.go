@@ -100,8 +100,9 @@ func NewLatencyTest(
 
 // Run executes the latency test for all proxies in parallel.
 // Results are sent to all provided result channels.
-func (t *LatencyTest) Run(resChans ...chan<- LatencyTestResult) {
-	runParallel(t.ctx, t.settings.Timeout, len(t.items), func(ctx context.Context, i int) LatencyTestResult {
+// Returns a function that waits for all goroutines to complete.
+func (t *LatencyTest) Run(resChans ...chan<- LatencyTestResult) func() {
+	return runParallel(t.ctx, t.settings.Timeout, len(t.items), func(ctx context.Context, i int) LatencyTestResult {
 		item := t.items[i]
 		defer item.client.CloseIdleConnections()
 

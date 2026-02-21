@@ -137,8 +137,9 @@ func NewSpeedTest(
 
 // Run executes the speed test for all proxies in parallel.
 // Results are sent to all provided result channels.
-func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) {
-	runParallel(t.ctx, t.settings.Timeout, len(t.items), func(ctx context.Context, i int) SpeedTestResult {
+// Returns a function that waits for all goroutines to complete.
+func (t *SpeedTest) Run(resChans ...chan<- SpeedTestResult) func() {
+	return runParallel(t.ctx, t.settings.Timeout, len(t.items), func(ctx context.Context, i int) SpeedTestResult {
 		item := t.items[i]
 		defer item.client.CloseIdleConnections()
 
